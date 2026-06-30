@@ -64,8 +64,8 @@ docker compose up -d --build
 
 2. **Find leaked credentials via directory listing.**
    `wp-content/uploads/backups/` has directory indexing enabled. Browsing to it
-   reveals `portal_backup_2024-03.zip`, which contains a valid low-privilege login:
-   `jsmith / Summer2024!`
+   reveals `portal_backup_2024-03.zip`, which contains a `credentials.txt` with a
+   valid low-privilege staff login to use in the next step.
 
 3. **Exploit broken access control.**
    `POST /wp-admin/admin-ajax.php` with `action=staffportal_publish_announcement`
