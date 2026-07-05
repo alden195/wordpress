@@ -1,108 +1,90 @@
-# staff-portal-lab — intentionally vulnerable WordPress lab
+staff-portal-lab — intentionally vulnerable WordPress lab
 
-> ⚠️ **For authorized security training / coursework use only.**
-> This application is deliberately insecure. Never deploy it on a public network,
-> never reuse its code, and never point it at production data.
-> Use only in an isolated, local environment (personal VM, internal CTF range,
-> or your own Docker host) as part of an authorized assignment.
 
-A small WordPress-based Staff Portal CMS built with Docker Compose, containing
-four chained vulnerabilities commonly found in real-world WordPress deployments.
+⚠️ For authorized security training / coursework use only.
+This application is deliberately insecure. Never deploy it on a public network,
+never reuse its code, and never point it at production data.
+Use only in an isolated, local environment (personal VM, internal CTF range,
+or your own Docker host) as part of an authorized assignment.
 
-## Tech Stack
+
+
+A small WordPress-based Staff Portal CMS built with Docker Compose. Staff log
+in to view internal announcements, notices, and downloadable resources;
+administrators manage pages, publish announcements, and install portal template
+packs through the dashboard.
+
+The application ships with several deliberately introduced security flaws for you
+to discover and exploit. Your objective is to work from an unauthenticated
+starting point through to remote code execution on the server.
+
+Tech Stack
 
 WordPress · PHP · MySQL · Apache · Docker Compose
 
-## Vulnerabilities
+What this lab covers
 
-| # | Vulnerability | Location |
-|---|---|---|
-| 1 | Username enumeration via `xmlrpc.php` | mu-plugin: `staffportal-xmlrpc-enum` |
-| 2 | Directory listing exposing a backup archive with leaked credentials | Apache config |
-| 3 | Privilege escalation via missing capability check | Plugin: `staff-portal-manager` |
-| 4 | Insecure plugin upload → RCE | Plugin: `staff-portal-manager` |
+Without spoiling where they live, the lab exercises four vulnerability classes:
 
-## Core Features (intentionally broken)
 
-- **Enumerate** valid staff usernames unauthenticated via a custom XML-RPC method
-- **Browse** an exposed directory index to retrieve a backup archive containing plaintext credentials
-- **Escalate** from a low-privilege staff account to admin-level content actions via a missing `current_user_can()` check
-- **Execute** arbitrary PHP on the server by uploading a malicious plugin zip through an unvalidated, unauthenticated endpoint
+Username / account enumeration
+Sensitive file exposure via server misconfiguration
+Broken access control (privilege escalation)
+Unrestricted file upload leading to remote code execution
 
-## Quick Start
 
-```bash
-git clone https://github.com/alden195/wordpress
+These are designed to chain — each finding feeds the next.
+
+Quick Start
+
+bashgit clone https://github.com/alden195/wordpress
 cd wordpress
 docker compose up -d --build
-```
 
-Wait ~1–2 minutes for the one-shot `setup` container to provision WordPress:
+Wait ~1–2 minutes for the one-shot setup container to provision WordPress:
 
-```bash
-docker compose logs -f setup
-```
+bashdocker compose logs -f setup
 
-Then browse to: **http://localhost:8080**
+Then browse to: http://localhost:8080
 
-Admin credentials *(for grading / resetting — not part of the intended attack path)*:
-`admin / AdminP@ssw0rd!`
+Admin credentials (for grading / resetting — not part of the intended attack path):
+admin / AdminP@ssw0rd!
 
-To reset everything:
+To reset the lab to a clean state at any time:
 
-```bash
-docker compose down -v
+bashdocker compose down -v
 docker compose up -d --build
-```
 
-## Intended Exploitation Chain
+Your Goal
 
-1. **Enumerate usernames via XML-RPC.**
-   The mu-plugin registers `staffportal.checkUser` on `/xmlrpc.php`. It returns a
-   success string for valid usernames and a distinct `404` fault for invalid ones —
-   an unauthenticated attacker can wordlist through this to identify staff accounts.
+Start with no credentials and see how far you can get. A complete solve chains
+all four issues together, ending in code execution as the web-server user.
 
-2. **Find leaked credentials via directory listing.**
-   `wp-content/uploads/backups/` has directory indexing enabled. Browsing to it
-   reveals `portal_backup_2024-03.zip`, which contains a `credentials.txt` with a
-   valid low-privilege staff login to use in the next step.
+Try to get as far as you can on your own first. If you get stuck, or you're
+grading/reviewing the lab, see SOLUTION.md — it contains
+progressive hints (reveal one nudge at a time) followed by full walkthroughs and
+remediation notes for every stage.
 
-3. **Exploit broken access control.**
-   `POST /wp-admin/admin-ajax.php` with `action=staffportal_publish_announcement`
-   lets any logged-in user publish content normally restricted to admins/editors —
-   the handler only checks `is_user_logged_in()`, not `current_user_can()`.
+Repo Layout
 
-4. **Achieve RCE via insecure plugin upload.**
-   `action=staffportal_import_template` accepts an arbitrary `.zip`, extracts it
-   into `wp-content/plugins/`, and auto-activates the uploaded plugin — all with
-   only a login check, no nonce, no capability check, no content validation.
-   A malicious plugin containing a PHP web shell executes as the web server user.
-   The extracted PHP is also directly reachable at
-   `http://localhost:8080/wp-content/plugins/<pack>/<shell>.php`.
-
-## Repo Layout
-
-```
 wordpress/
 ├── docker-compose.yml
-├── seed/
-│   └── portal_backup_2024-03.zip     # leaked backup (vuln #2)
+├── seed/                             # seed data loaded during provisioning
 ├── scripts/
 │   └── wp-setup.sh                   # wp-cli provisioning, runs once
 └── wordpress/
     ├── Dockerfile
-    ├── conf/
-    │   └── directory-listing.conf    # enables Options +Indexes (vuln #2)
-    ├── mu-plugins/
-    │   └── staffportal-xmlrpc-enum.php   # vuln #1
+    ├── conf/                         # Apache configuration
+    ├── mu-plugins/                   # must-use plugins (auto-loaded)
     └── plugins/
-        └── staff-portal-manager/
-            └── staff-portal-manager.php  # vulns #3 and #4
-```
+        └── staff-portal-manager/     # custom portal management plugin
 
-## Notes for Write-up / Grading
+Notes
 
-- The plugin source has inline comments marking each bug (`Bug 1` / `Bug 2`) for root-cause reporting.
-- Stock WordPress XML-RPC does **not** leak usernames — the mu-plugin is what makes vuln #1 deterministic.
-- Credentials in `seed/portal_backup_2024-03.zip` and the `jsmith` WordPress account are kept in sync by `wp-setup.sh`.
-- For a harder variant, swap `subscriber` for a custom `Staff` role — the plugin bugs fire regardless of role, only requiring the user to be logged in.
+
+The lab is fully self-provisioning; the setup container creates all accounts,
+content, and seed files, then exits.
+Everything runs locally and is disposable — docker compose down -v wipes all
+state so you can start fresh.
+Instructor / grading notes, credentials, and the intended solution path live in
+SOLUTION.md, kept separate so they aren't visible at a glance.
